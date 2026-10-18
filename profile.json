@@ -1,0 +1,60 @@
+{
+  "profile_id": "generic-lowpriv-one-probe-01",
+  "architecture": "linux/amd64",
+  "base_image": "python:3.13-slim-bookworm@sha256:f040863673aea2570c3ff6a5c3fb4c673a016cbc5375005ad145915922b6b78a",
+  "packages": {
+    "s6": "2.11.3.2-1",
+    "util-linux": "2.38.1-5+deb12u3",
+    "libseccomp2": "2.5.4-1+deb12u1",
+    "libcap2": "1:2.66-4+deb12u3+b1"
+  },
+  "roles": {
+    "T": 10001,
+    "P": 10011,
+    "V": 10012,
+    "R": 10013
+  },
+  "supervisor": {
+    "uid": 0,
+    "effective_permitted_hex": "e0",
+    "capabilities": [
+      "KILL",
+      "SETGID",
+      "SETUID"
+    ],
+    "inheritable": 0,
+    "ambient": 0,
+    "no_new_privs": 1,
+    "runtime_chown": false
+  },
+  "limits": {
+    "body_seconds": 60,
+    "deliberate_timeout_seconds": 2,
+    "termination_seconds": 3,
+    "scratch_bytes": 4194304,
+    "stream_bytes": 65536,
+    "dispatch_bytes": 1024,
+    "result_bytes": 49152,
+    "retention_minutes": 30
+  },
+  "runtime_env": [
+    "PATH",
+    "LC_ALL",
+    "PYTHONDONTWRITEBYTECODE",
+    "PROBE_SLOT"
+  ],
+  "dispatch_control": "one ephemeral probe-only X-Probe-Dispatch token; no account credential; never returned/logged",
+  "public_routes": {
+    "GET": [
+      "/healthz",
+      "/result"
+    ],
+    "POST": [
+      "/dispatch"
+    ]
+  },
+  "platform_secret_file": "NOT_CONFIGURED_NOT_TESTED",
+  "execution_state": "PREPARED_NOT_BUILT_NOT_RUN_NOT_APPROVED",
+  "policy_sha256": "06db6eaab81a865aa92d360ffa83a523c8b9af1bc5ceba1231fe6def270f3808",
+  "runtime_bpf_sha256": "NOT_OBSERVED_BUILD_AND_RUN_NOT_AUTHORIZED"
+}
