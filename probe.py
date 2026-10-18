@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import signal
 import stat
 import subprocess
@@ -16,6 +17,62 @@ from contract import NAMESPACES, program
 
 MARKER = b'GENERIC_CAPABILITY_PROBE_V1\n'
 ROOT = Path(__file__).resolve().parent
+
+# Public error vocabulary only. Everything else, including runtime paths, URLs,
+# arbitrary identifiers, tokens and personal strings, is replaced before output.
+SAFE_WORDS = frozenset('''bwrap bubblewrap failed failure error cannot can't could
+not to from at the permission denied operation permitted invalid argument no such file or
+directory read only filesystem system function implemented exists resource
+temporarily unavailable out of memory allocate space left on device creating
+create new namespace user pid net network ipc uts mount mounts bind remount
+private slave shared propagation make setting up uid gid map uid_map gid_map
+setgroups setuid setgid setresuid setresgid fsuid fsgid capset capget capabilities
+bounding set drop supplementary groups loopback rtm_newaddr rtnetlink prctl
+pr_set_pdeathsig pr_set_seccomp seccomp filtering execute exec execv execve
+execvp loading libraries library python chdir source destination symlink open
+write read data proc dev devpts tmpfs pivot_root oldroot newroot base_path
+stat statfs readlink socket socketpair clone clone3 unshare setns eacces eperm
+einval enoent enosys enospc ebusy path url redacted'''.split())
+
+
+def safe_diagnostic(stderr):
+    text = stderr[:2048].decode('ascii',errors='replace').lower()
+    errno_code = 'UNKNOWN'
+    for phrase, name in (('permission denied','EACCES'),('operation not permitted','EPERM'),
+                         ('invalid argument','EINVAL'),('no such file or directory','ENOENT'),
+                         ('function not implemented','ENOSYS'),('no space left','ENOSPC')):
+        if phrase in text: errno_code = name; break
+    context = 'UNKNOWN'
+    for phrase, name in (('make / slave','MOUNT_PROPAGATION'),('uid map','UID_MAPPING'),
+                         ('gid map','GID_MAPPING'),('namespace','NAMESPACE_CREATION'),
+                         ('seccomp','SECCOMP_ATTACH'),('mount','MOUNT_SETUP'),
+                         ('chdir','WORKING_DIRECTORY'),('execute','EXECUTION'),
+                         ('shared libraries','DYNAMIC_LOADER'),('capset','CAPABILITIES')):
+        if phrase in text: context = name; break
+    # Redact whole paths/URLs/email before tokenization, not just punctuation.
+    text = re.sub(r'https?://\S+',' URL ',text)
+    text = re.sub(r'\S+@\S+',' REDACTED ',text)
+    text = re.sub(r'/[^\s\"\'<>]*',' PATH ',text)
+    words = re.findall(r"[a-z][a-z_']*",text.lower())
+    safe = []
+    for word in words[:100]:
+        token = word if word in SAFE_WORDS else '[redacted]'
+        if token != '[redacted]' or not safe or safe[-1] != token:safe.append(token)
+    rendered = ' '.join(safe)
+    excerpt = rendered[:384]
+    return {'context':context,'errno':errno_code,'safe_excerpt':excerpt,
+            'captured_bytes':len(stderr),'excerpt_limited':len(stderr)>2048 or len(words)>100 or len(rendered)>384}
+
+
+def prerequisite_summary(directory):
+    library = Path(sys.base_prefix)/'lib'
+    return {'python_executable_present':Path(sys.executable).resolve().is_file(),
+            'python_stdlib_present':(library/f'python{sys.version_info.major}.{sys.version_info.minor}').is_dir(),
+            'libpython_candidates':len(list(library.glob('libpython*.so*'))),
+            'child_script_readable':os.access(ROOT/'child.py',os.R_OK),
+            'helper_present':Path('/usr/bin/true').is_file(),
+            'synthetic_input_readable':os.access(Path(directory)/'fixture/input',os.R_OK),
+            'synthetic_work_writable':os.access(Path(directory)/'work',os.W_OK)}
 
 
 def reply(outcome, code, **facts):
@@ -109,7 +166,8 @@ def run_stage(directory, filtered, cancel):
         if fd is not None: os.close(fd)
         if process is not None and not cleaned: cleaned = finish_owned(process)
     metadata = {'exit':process.returncode, 'elapsed_seconds':round(time.monotonic()-started,3),
-                'owned_process_group_empty':cleaned,'stderr_sha256':hashlib.sha256(error).hexdigest()}
+                'owned_process_group_empty':cleaned,'stderr_sha256':hashlib.sha256(error).hexdigest(),
+                'diagnostic':safe_diagnostic(error),'prerequisites':prerequisite_summary(directory)}
     if not cleaned: return reply('INCONCLUSIVE','CLEANUP_NOT_PROVEN',**metadata)
     if cancelled: return reply('INCONCLUSIVE','CANCELLED',**metadata)
     if timed_out: return reply('INCONCLUSIVE','TIME_OR_OUTPUT_LIMIT',**metadata)

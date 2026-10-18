@@ -39,8 +39,13 @@ safe process-creation paths.
   fixed 404. Write methods return fixed 405 without reading a body.
 - HTTP requests cannot rerun the probe, select commands, upload files, or read
   arbitrary paths. Request paths, bodies and headers are not logged.
-- Stderr is classified into fixed codes and hashed; raw process text is not
-  returned. Temporary namespace IDs are compared internally and not published.
+- Stderr is hashed and classified; diagnostics add fixed context/errno enums,
+  at most 384 ASCII characters of public error-vocabulary words, and prerequisite
+  booleans. Paths, URLs, emails and all non-allowlisted words are redacted. Only
+  the first 2048 captured bytes are considered for the excerpt. Raw stderr and
+  environment values are never returned. Temporary namespace IDs are compared
+  internally and not published. Diagnosis does not change the sandbox policy
+  or silently upgrade an inconclusive observation into platform incompatibility.
 
 ## Results
 

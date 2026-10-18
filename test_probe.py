@@ -40,6 +40,27 @@ class PolicyTests(unittest.TestCase):
 
 
 class ClassificationTests(unittest.TestCase):
+    def test_safe_diagnostic_identifies_mount_step_without_paths(self):
+        data=b'bwrap: Failed to make / slave: Permission denied\n'
+        result=probe.safe_diagnostic(data)
+        self.assertEqual(result['context'],'MOUNT_PROPAGATION')
+        self.assertEqual(result['errno'],'EACCES')
+        self.assertIn('failed to make',result['safe_excerpt'])
+        self.assertNotIn('/',result['safe_excerpt'])
+        # Diagnosis must not silently change the original outcome classification.
+        self.assertEqual(probe.classify(data),('INCONCLUSIVE','SANDBOX_SETUP_OR_EXECUTION_ERROR'))
+
+    def test_safe_diagnostic_redacts_arbitrary_values_and_is_bounded(self):
+        data=(b'bwrap: Cannot execute /tmp/SECRET_PATH_123: No such file or directory\n'
+              b'https://host.invalid/SECRET_URL SECRET_TOKEN_123 somebody@private.invalid\n')
+        result=probe.safe_diagnostic(data)
+        for marker in ('secret','private.invalid','host.invalid','somebody','/tmp'):
+            self.assertNotIn(marker,result['safe_excerpt'])
+        for word in result['safe_excerpt'].split():
+            self.assertTrue(word in probe.SAFE_WORDS or word=='[redacted]')
+        self.assertLessEqual(len(probe.safe_diagnostic(data*1000)['safe_excerpt'].encode()),384)
+        self.assertTrue(probe.safe_diagnostic(data*1000)['excerpt_limited'])
+
     def test_dependency_and_resource_errors_are_not_kernel_rejection(self):
         for text in (b'error loading shared libraries',b'bwrap: No such file or directory',
                      b'Creating new namespace: No space left on device',b'Cannot allocate memory'):
